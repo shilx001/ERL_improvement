@@ -38,6 +38,18 @@ class Actor(object):
                                                   tf.multiply(self.target_network_params[i], 1. - self.tau))
              for i in range(len(self.target_network_params))]
 
+        self.w1 = tf.placeholder(shape=[self.s_dim, self.hidden_size], dtype=tf.float32)
+        self.b1 = tf.placeholder(shape=[self.hidden_size, ], dtype=tf.float32)
+        self.w2 = tf.placeholder(shape=[self.hidden_size, self.hidden_size], dtype=tf.float32)
+        self.b2 = tf.placeholder(shape=[self.hidden_size, ], dtype=tf.float32)
+        self.w3 = tf.placeholder(shape=[self.hidden_size, self.a_dim], dtype=tf.float32)
+        self.b3 = tf.placeholder(shape=[self.a_dim, ], dtype=tf.float32)
+        self.input_parameters = [self.w1, self.b1, self.w2, self.b2, self.w3, self.b3]
+        self.syn_target_op = [self.target_network_params[i].assign(self.input_parameters[i]) for i in
+                              range(len(self.target_network_params))]
+        self.syn_policy_op = [self.network_params[i].assign(self.input_parameters[i]) for i in
+                              range(len(self.target_network_params))]
+
     def create_actor_network(self, scope, reuse=False):
         with tf.variable_scope(scope, reuse=reuse):
             net = self.inp
@@ -141,7 +153,7 @@ class Critic(object):
 class TD3(object):
     def __init__(self, state_dim, action_dim, action_bound, discount_factor=0.99,
                  seed=1, actor_lr=1e-3, critic_lr=1e-3, batch_size=100, namescope='default',
-                 tau=0.005, policy_noise=0.1, noise_clip=0.5, hidden_size=64):
+                 tau=0.005, policy_noise=0.1, noise_clip=0.5, hidden_size=300):
         np.random.seed(int(seed))
         tf.set_random_seed(seed)
         self.state_dim = state_dim
@@ -199,3 +211,17 @@ class TD3(object):
 
     def get_action_target(self, s):
         return self.actor.predict_target(np.reshape(s, (1, self.actor.s_dim)))
+
+    def syn_params(self, params_):
+        self.sess.run(self.actor.syn_target_op, feed_dict={self.actor.w1: params_[0],
+                                                           self.actor.b1: params_[1],
+                                                           self.actor.w2: params_[2],
+                                                           self.actor.b2: params_[3],
+                                                           self.actor.w3: params_[4],
+                                                           self.actor.b3: params_[5]})
+        self.sess.run(self.actor.syn_policy_op, feed_dict={self.actor.w1: params_[0],
+                                                           self.actor.b1: params_[1],
+                                                           self.actor.w2: params_[2],
+                                                           self.actor.b2: params_[3],
+                                                           self.actor.w3: params_[4],
+                                                           self.actor.b3: params_[5]})

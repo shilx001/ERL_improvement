@@ -10,9 +10,9 @@ import td3_network
 class HP:
     # hyper parameters
     def __init__(self, env_name='Hopper-v2', total_episodes=1000, action_bound=1,
-                 episode_length=1000, learning_rate=0.02, weight=0.01, learning_steps=1000,
-                 num_samples=10, noise=0.02, bc_index=[], std_dev=0.03,
-                 meta_population_size=5, seed=1, normalizer=None, hidden_size=64):
+                 episode_length=1000, learning_rate=0.01, weight=0.01, learning_steps=1000,
+                 num_samples=10, noise=0.02, bc_index=[], std_dev=0.03, syn_step=10,
+                 meta_population_size=5, seed=1, normalizer=None, hidden_size=300):
         self.env = gym.make(env_name)
         np.random.seed(seed)
         self.env.seed(seed)
@@ -26,6 +26,7 @@ class HP:
         self.noise = noise
         self.meta_population_size = meta_population_size
         self.seed = seed
+        self.syn_step = syn_step
         self.learning_steps = learning_steps
         self.bc_index = bc_index
         self.weight = weight
@@ -115,6 +116,14 @@ class Policy:
         self.ba_1 = Adam_optimizer(self.hp.lr)
         self.ba_2 = Adam_optimizer(self.hp.lr)
         self.ba_3 = Adam_optimizer(self.hp.lr)
+
+    def get_params(self):
+        return [self.w1,
+                self.b1,
+                self.w2,
+                self.b2,
+                self.w3,
+                self.b3]
 
     def get_action(self, state, delta=None):
         state = np.reshape(state, [1, self.hp.input_size])
@@ -221,6 +230,14 @@ class Policy:
         self.w3 = self.w3 * (1 - self.hp.weight) + params[4]
         self.b3 = self.b3 * (1 - self.hp.weight) + params[5]
 
+    def td3_update(self, params):
+        self.w1 = params[0]
+        self.b1 = params[1]
+        self.w2 = params[2]
+        self.b2 = params[3]
+        self.w3 = params[4]
+        self.b3 = params[5]
+
 
 class ARS_TD3:
     def __init__(self, hp):
@@ -234,8 +251,6 @@ class ARS_TD3:
             start_time = datetime.datetime.now()
             deltas = [policy.sample_deltas() for _ in
                       range(self.hp.num_samples)]
-            novelty_forward_list = []
-            novelty_backward_list = []
             forward_reward_list = []
             backward_reward_list = []
             for i in range(self.hp.num_samples):
@@ -250,25 +265,16 @@ class ARS_TD3:
             sigma_rewards = np.std(np.array(forward_reward_list + backward_reward_list))
             # policy.update(rollouts, sigma_rewards)
             policy.adam_update(rollouts, sigma_rewards)
-            self.hp.td3_agent.train(self.hp.learning_steps)
-            if t % 100 == 0 and t != 0:
-                policy.td3_soft_update(self.hp.td3_agent.get_params())
+            if t % self.hp.syn_step == 0 and t != 0:
+                self.hp.td3_agent.syn_params(policy.get_params())
+                self.hp.td3_agent.train(self.hp.learning_steps)
+                policy.td3_update(self.hp.td3_agent.get_params())
                 # pass
             test_reward = policy.evaluate()
             print('#######')
             print('Episode ', t)
             print('Total reward is: ', test_reward)
             print('Running time:', (datetime.datetime.now() - start_time).seconds)
-            td3_reward = 0
-            obs = self.hp.env.reset()
-            for i in range(self.hp.episode_length):
-                action = self.hp.td3_agent.get_action_target(np.reshape(obs, [1, -1]))
-                next_obs, reward, done, _ = self.hp.env.step(action)
-                obs=next_obs
-                td3_reward+=reward
-                if done:
-                    print('TD3 reward is: ',td3_reward)
-                    break
             reward_memory.append(test_reward)
         return reward_memory
 
