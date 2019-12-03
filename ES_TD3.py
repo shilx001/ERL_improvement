@@ -12,9 +12,10 @@ import td3_network
 
 
 class HP:
-    def __init__(self, env_name='Hopper-v2', total_episodes=1000, learning_steps=1000, gamma=0.99, update_time=10,
+    def __init__(self, env_name='Hopper-v2', total_episodes=1000, learning_steps=1000, gamma=0.99, update_time=1,
                  episode_length=1000, total_steps=int(1e6), lr=1e-3, action_bound=1, num_samples=10, noise=0.02,
-                 std_dev=0.03, batch_size=100, elite_percentage=0.2, mutate=0.2, crossover=0.2, hidden_size=300, seed=1):
+                 std_dev=0.03, batch_size=100, elite_percentage=0.2, mutate=0.9, crossover=0.2, hidden_size=300,
+                 seed=1):
         self.env = gym.make(env_name)
         np.random.seed(seed)
         self.env.seed(seed)
@@ -40,7 +41,8 @@ class HP:
         self.batch_size = batch_size
         # config = tf.ConfigProto(device_count={'GPU': gpu})
         self.learning_steps = learning_steps
-        self.td3_agent = td3_network.TD3(self.input_size, self.output_size, 1, namescope=str(seed))
+        self.td3_agent = td3_network.TD3(self.input_size, self.output_size, 1, namescope=str(seed),
+                                         hidden_size=self.hidden_size)
 
 
 class Policy:
@@ -94,7 +96,7 @@ class Policy:
                 done = True
             self.hp.td3_agent.store(obs, next_obs, action, reward, done)
             obs = next_obs
-            total_reward += self.hp.gamma**i*reward
+            total_reward += self.hp.gamma ** i * reward
             num_steps += 1
             if done:
                 break
@@ -219,15 +221,15 @@ class ERL_TD3:
                     env.action_space.high)
                 action = np.reshape(action, [-1])
                 next_obs, reward, done, _ = env.step(action)
-                td3_reward += self.hp.gamma**step*reward
+                td3_reward += self.hp.gamma ** step * reward
                 # self.hp.replay_buffer.add((self.hp.normalizer.normalize(obs), self.hp.normalizer.normalize(next_obs),
                 #                          action, reward, done))
                 self.hp.td3_agent.store(obs, next_obs, action, reward, done)
                 obs = next_obs
                 if done:
-                    if i > 20:
-                        self.hp.td3_agent.train(self.hp.learning_steps)
                     break
+            if i > 20:
+                self.hp.td3_agent.train(self.hp.learning_steps)
             if i % self.hp.update_time is 0 and i is not 0:
                 weakest = population.pop[sorted_index[0]]
                 weakest.set_params(self.hp.td3_agent.get_params())

@@ -13,9 +13,9 @@ import simhash
 
 
 class HP:
-    def __init__(self, env_name='Hopper-v2', total_episodes=1000, learning_steps=1000, gamma=0.99, update_time=10,
+    def __init__(self, env_name='Hopper-v2', total_episodes=1000, learning_steps=1000, gamma=0.99, update_time=1,
                  episode_length=1000, total_steps=int(1e6), lr=1e-3, action_bound=1, num_samples=10, noise=0.02, beta=1,
-                 std_dev=0.03, batch_size=100, elite_percentage=0.2, mutate=0.2, crossover=0.2, hidden_size=300,
+                 std_dev=0.03, batch_size=100, elite_percentage=0.2, mutate=0.9, crossover=0.2, hidden_size=300,
                  seed=1, add_bonus=True):
         self.env = gym.make(env_name)
         np.random.seed(seed)
@@ -44,7 +44,8 @@ class HP:
         self.add_bonus = add_bonus
         # config = tf.ConfigProto(device_count={'GPU': gpu})
         self.learning_steps = learning_steps
-        self.td3_agent = td3_network.TD3(self.input_size, self.output_size, 1, namescope=str(seed))
+        self.td3_agent = td3_network.TD3(self.input_size, self.output_size, 1, namescope=str(seed),
+                                         hidden_size=self.hidden_size)
         self.simhash = simhash.HashingBonusEvaluator(dim_key=32,
                                                      obs_processed_flat_dim=self.input_size + self.output_size,
                                                      beta=self.beta)
@@ -242,19 +243,19 @@ class ERL_TD3:
                 self.hp.td3_agent.store(obs, next_obs, action, reward, done)
                 obs = next_obs
                 if done:
-                    if i > 20:
-                        self.hp.td3_agent.train(self.hp.learning_steps)
                     break
+            if i > 20:
+                self.hp.td3_agent.train(self.hp.learning_steps)
             if i % self.hp.update_time is 0 and i is not 0:
                 weakest = population.pop[sorted_index[0]]
                 weakest.set_params(self.hp.td3_agent.get_params())
                 population.update_policy(weakest, sorted_index[0])
             total_step_list.append(total_step + step)
-            evaluate_reward,_ = population.pop[sorted_index[-1]].evaluate(add_bonus=False)
+            evaluate_reward, _ = population.pop[sorted_index[-1]].evaluate(add_bonus=False)
             print('#####')
             print('Episode ', i, ' reward:', evaluate_reward)  # 最好的结果
             print('Running steps:', total_step + step)
             print('Running time:', (datetime.datetime.now() - start).seconds)
-            #print('TD3 reward is:', td3_reward)
+            # print('TD3 reward is:', td3_reward)
 
         return total_reward, total_step_list

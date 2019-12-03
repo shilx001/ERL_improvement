@@ -151,7 +151,7 @@ class Critic(object):
 
 
 class TD3(object):
-    def __init__(self, state_dim, action_dim, action_bound, discount_factor=0.99,
+    def __init__(self, state_dim, action_dim, action_bound, discount_factor=1,
                  seed=1, actor_lr=1e-3, critic_lr=1e-3, batch_size=100, namescope='default',
                  tau=0.005, policy_noise=0.1, noise_clip=0.5, hidden_size=300):
         np.random.seed(int(seed))
