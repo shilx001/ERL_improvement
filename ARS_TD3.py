@@ -9,10 +9,10 @@ import td3_network
 
 class HP:
     # hyper parameters
-    def __init__(self, env_name='Hopper-v2', total_episodes=1000, action_bound=1,
-                 episode_length=1000, learning_rate=0.01, weight=0.01, learning_steps=1000,
+    def __init__(self, env_name='Swimmer-v2', total_episodes=1000, action_bound=1,
+                 episode_length=1000, learning_rate=0.01, weight=0.01, learning_steps=100,
                  num_samples=10, noise=0.02, bc_index=[], std_dev=0.03, syn_step=10,
-                 meta_population_size=5, seed=1, normalizer=None, hidden_size=300):
+                 meta_population_size=5, seed=1, normalizer=None, hidden_size=64):
         self.env = gym.make(env_name)
         np.random.seed(seed)
         self.env.seed(seed)
@@ -33,7 +33,7 @@ class HP:
         self.normalizer = normalizer
         self.hidden_size = hidden_size
         self.stddev = std_dev
-        self.td3_agent = td3_network.TD3(self.input_size, self.output_size, 1)
+        self.td3_agent = td3_network.TD3(self.input_size, self.output_size, 1, hidden_size=self.hidden_size)
 
 
 class Archive:
@@ -223,12 +223,12 @@ class Policy:
                 np.random.randn(*self.b3.shape) * self.hp.noise]
 
     def td3_soft_update(self, params):
-        self.w1 = self.w1 * (1 - self.hp.weight) + params[0]
-        self.b1 = self.b1 * (1 - self.hp.weight) + params[1]
-        self.w2 = self.w2 * (1 - self.hp.weight) + params[2]
-        self.b2 = self.b2 * (1 - self.hp.weight) + params[3]
-        self.w3 = self.w3 * (1 - self.hp.weight) + params[4]
-        self.b3 = self.b3 * (1 - self.hp.weight) + params[5]
+        self.w1 = self.w1 * (1 - self.hp.weight) + self.hp.weight * params[0]
+        self.b1 = self.b1 * (1 - self.hp.weight) + self.hp.weight * params[1]
+        self.w2 = self.w2 * (1 - self.hp.weight) + self.hp.weight * params[2]
+        self.b2 = self.b2 * (1 - self.hp.weight) + self.hp.weight * params[3]
+        self.w3 = self.w3 * (1 - self.hp.weight) + self.hp.weight * params[4]
+        self.b3 = self.b3 * (1 - self.hp.weight) + self.hp.weight * params[5]
 
     def td3_update(self, params):
         self.w1 = params[0]
@@ -268,7 +268,7 @@ class ARS_TD3:
             if t % self.hp.syn_step == 0 and t != 0:
                 self.hp.td3_agent.syn_params(policy.get_params())
                 self.hp.td3_agent.train(self.hp.learning_steps)
-                policy.td3_update(self.hp.td3_agent.get_params())
+                policy.td3_soft_update(self.hp.td3_agent.get_params())
                 # pass
             test_reward = policy.evaluate()
             print('#######')
@@ -279,6 +279,6 @@ class ARS_TD3:
         return reward_memory
 
 
-hp = HP(normalizer=Normalizer(11))
+hp = HP(normalizer=Normalizer(8))
 agent = ARS_TD3(hp)
 agent.train()

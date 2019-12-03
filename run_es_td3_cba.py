@@ -1,4 +1,4 @@
-from ES_TD3 import *
+from ES_TD3_CBA import *
 import pickle
 
 env_name = 'Hopper-v2'
