@@ -14,7 +14,7 @@ import td3_network
 class HP:
     def __init__(self, env_name='Hopper-v2', total_episodes=1000, learning_steps=1000, gamma=0.99, update_time=10,
                  episode_length=1000, total_steps=int(1e6), lr=1e-3, action_bound=1, num_samples=10, noise=0.02,
-                 std_dev=0.03, batch_size=100, elite_percentage=0.2, mutate=0.2, crossover=0.2, hidden_size=64, seed=1):
+                 std_dev=0.03, batch_size=100, elite_percentage=0.2, mutate=0.2, crossover=0.2, hidden_size=300, seed=1):
         self.env = gym.make(env_name)
         np.random.seed(seed)
         self.env.seed(seed)
