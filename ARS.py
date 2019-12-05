@@ -34,8 +34,6 @@ class HP:
         self.normalizer = utils.Normalizer(self.env.observation_space.shape[0])
         self.hidden_size = hidden_size
         self.stddev = std_dev
-        self.td3_agent = td3_network.TD3(self.input_size, self.output_size, 1, hidden_size=self.hidden_size)
-
 
 class Archive:
     # the archive, store the behavior
@@ -150,8 +148,6 @@ class Policy:
             action = np.clip(self.get_action(self.hp.normalizer.normalize(obs), delta=delta), -1, 1)
             # action = np.clip(self.get_action(obs, delta=delta), -1, 1)
             next_obs, reward, done, _ = self.hp.env.step(action)
-            self.hp.td3_agent.store(self.hp.normalizer.normalize(obs), self.hp.normalizer.normalize(next_obs),
-                                    action, reward, done)
             obs = next_obs
             total_reward += reward
             total_step += 1
@@ -271,15 +267,7 @@ class ARS_TD3:
             sigma_rewards = np.std(np.array(forward_reward_list + backward_reward_list))
             # policy.update(rollouts, sigma_rewards)
             policy.adam_update(rollouts, sigma_rewards)
-            self.hp.td3_agent.train(self.hp.learning_steps)
-            if t % self.hp.syn_step == 0 and t != 0:
-                # self.hp.td3_agent.syn_params(policy.get_params())
-
-                # policy.td3_update(self.hp.td3_agent.get_params())
-                policy.td3_soft_update(self.hp.td3_agent.get_params())
-                # self.hp.td3_update(self.hp.td3_agent.get_params())
-                # pass
-            test_reward, _ = policy.evaluate()
+            test_reward,_ = policy.evaluate()
             total_step.append(current_step)
             print('#######')
             print('Episode ', t)
@@ -287,9 +275,4 @@ class ARS_TD3:
             print('Total step is: ', current_step)
             print('Running time:', (datetime.datetime.now() - start_time).seconds)
             reward_memory.append(test_reward)
-        return reward_memory, total_step
-
-
-hp = HP()
-agent = ARS_TD3(hp)
-agent.train()
+        return reward_memory,total_step

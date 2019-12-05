@@ -13,7 +13,7 @@ import simhash
 
 
 class HP:
-    def __init__(self, env_name='Hopper-v2', total_episodes=1000, learning_steps=1000, gamma=0.99, update_time=1,
+    def __init__(self, env_name='Hopper-v2', total_episodes=1000, learning_steps=1000, gamma=1, update_time=1,
                  episode_length=1000, total_steps=int(1e6), lr=1e-3, action_bound=1, num_samples=10, noise=0.02, beta=1,
                  std_dev=0.03, batch_size=100, elite_percentage=0.2, mutate=0.9, crossover=0.2, hidden_size=300,
                  seed=1, add_bonus=True):
@@ -246,7 +246,7 @@ class ERL_TD3:
                     break
             if i > 20:
                 self.hp.td3_agent.train(self.hp.learning_steps)
-            if i % self.hp.update_time is 0 and i is not 0:
+            if i % self.hp.update_time is 0 and i is not 1:
                 weakest = population.pop[sorted_index[0]]
                 weakest.set_params(self.hp.td3_agent.get_params())
                 population.update_policy(weakest, sorted_index[0])

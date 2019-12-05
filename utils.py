@@ -7,7 +7,7 @@ import collections
 
 # Simple replay buffer
 class ReplayBuffer(object):
-    def __init__(self, max_len=100000):
+    def __init__(self, max_len=10000000):
         self.storage = collections.deque(maxlen=max_len)
 
     # Expects tuples of (state, next_state, action, reward, done)
