@@ -16,7 +16,7 @@ class HP:
     def __init__(self, env_name='Hopper-v2', total_episodes=1000, learning_steps=100, gamma=1, update_time=1,
                  episode_length=1000, total_steps=int(1e6), lr=1e-3, action_bound=1, num_samples=10, noise=0.02, beta=1,
                  std_dev=0.03, batch_size=100, elite_percentage=0.2, mutate=0.9, crossover=0.2, hidden_size=300,
-                 seed=1, add_bonus=True):
+                 seed=1, add_bonus=True, namescope='default'):
         self.env = gym.make(env_name)
         np.random.seed(seed)
         self.env.seed(seed)
@@ -44,7 +44,8 @@ class HP:
         self.add_bonus = add_bonus
         # config = tf.ConfigProto(device_count={'GPU': gpu})
         self.learning_steps = learning_steps
-        self.td3_agent = td3_network.TD3(self.input_size, self.output_size, 1, namescope=str(seed),
+        self.namescope = namescope
+        self.td3_agent = td3_network.TD3(self.input_size, self.output_size, 1, namescope=self.namescope,
                                          hidden_size=self.hidden_size)
         self.simhash = simhash.HashingBonusEvaluator(dim_key=32,
                                                      obs_processed_flat_dim=self.input_size + self.output_size,
@@ -98,7 +99,7 @@ class Policy:
 
     def get_action(self, state, delta=None):  # 需要重写一下
         state = np.reshape(state, [1, self.hp.input_size])
-        return self.sess.run(self.action, feed_dict={self.input_state:state})
+        return self.sess.run(self.action, feed_dict={self.input_state: state})
 
     def evaluate(self, delta=None, add_bonus=False):  # 不用
         # 根据当前state执在环境中执行一次，返回获得的reward和novelty
@@ -162,8 +163,9 @@ class Population:
     def __init__(self, hp):
         # 创建n个population
         self.pop = collections.deque(maxlen=hp.num_samples)
+        self.hp=hp
         for i in range(hp.num_samples):
-            self.pop.append(Policy(hp, namescope='policy'+str(i)))
+            self.pop.append(Policy(hp, namescope=self.hp.namescope + 'policy' + str(i)))
 
     def eval_fitness(self, add_bonus=True):
         total_steps = 0

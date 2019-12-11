@@ -14,7 +14,8 @@ import td3_network
 class HP:
     def __init__(self, env_name='Hopper-v2', total_episodes=1000, learning_steps=1000, gpu=0, update_time=1,
                  episode_length=1000, total_steps=int(1e6), lr=1e-3, action_bound=1, num_samples=10, noise=0.02,
-                 std_dev=0.03, batch_size=100, elite_percentage=0.2, mutate=0.9, crossover=0.2, hidden_size=64, seed=1):
+                 std_dev=0.03, batch_size=100, elite_percentage=0.2, mutate=0.9, crossover=0.2, hidden_size=64, seed=1,
+                 namescope='default'):
         self.env = gym.make(env_name)
         np.random.seed(seed)
         self.env.seed(seed)
@@ -37,9 +38,12 @@ class HP:
         self.hidden_size = hidden_size
         self.normalizer = utils.Normalizer(self.input_size)
         self.batch_size = batch_size
+        self.namescope = namescope
+        self.gamma = 1
         # config = tf.ConfigProto(device_count={'GPU': gpu})
         self.learning_steps = learning_steps
-        self.td3_agent = td3_network.TD3(self.input_size, self.output_size, 1, namescope=str(seed),hidden_size=hidden_size)
+        self.td3_agent = td3_network.TD3(self.input_size, self.output_size, 1, namescope=self.namescope,
+                                         hidden_size=hidden_size)
 
 
 class Policy:
@@ -89,7 +93,7 @@ class Policy:
 
     def get_action(self, state, delta=None):  # 需要重写一下
         state = np.reshape(state, [1, self.hp.input_size])
-        return self.sess.run(self.action, feed_dict={self.input_state:state})
+        return self.sess.run(self.action, feed_dict={self.input_state: state})
 
     def evaluate(self, delta=None, add_bonus=False):  # 不用
         # 根据当前state执在环境中执行一次，返回获得的reward和novelty
@@ -153,8 +157,9 @@ class Population:
     def __init__(self, hp):
         # 创建n个population
         self.pop = collections.deque(maxlen=hp.num_samples)
+        self.hp = hp
         for i in range(hp.num_samples):
-            self.pop.append(Policy(hp,'policy'+str(i)))
+            self.pop.append(Policy(hp, self.hp.namescope + 'policy' + str(i)))
 
     def eval_fitness(self):
         total_steps = 0
@@ -242,7 +247,7 @@ class ERL_TD3:
                 self.hp.td3_agent.store(obs, next_obs, action, reward, done)
                 obs = next_obs
                 if done:
-                    #if i > 20:
+                    # if i > 20:
                     #    self.hp.td3_agent.train(self.hp.learning_steps)
                     break
             if i > 20:
