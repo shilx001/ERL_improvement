@@ -34,6 +34,8 @@ class HP:
         self.normalizer = utils.Normalizer(self.env.observation_space.shape[0])
         self.hidden_size = hidden_size
         self.stddev = std_dev
+        self.num_best_deltas = 4
+
 
 class Archive:
     # the archive, store the behavior
@@ -127,7 +129,7 @@ class Policy:
     def get_action(self, state, delta=None):
         state = np.reshape(state, [1, self.hp.input_size])
         if delta is None:
-            output1 = np.maximum(np.dot(state, self.w1) + self.b1, 0)
+            output1 = np.sigmoid(np.dot(state, self.w1) + self.b1, 0)
             output2 = np.maximum(np.dot(output1, self.w2) + self.b2, 0)
             action = np.tanh(np.reshape(np.dot(output2, self.w3) + self.b3, [self.hp.output_size, ]))
         else:
@@ -184,33 +186,33 @@ class Policy:
 
     def adam_update(self, rollouts, sigma_rewards):
         step = 0
-        for r, delta in rollouts:
-            step += r * delta[0]
+        for r1, r2, delta in rollouts:
+            step += (r1 - r2) * delta[0]
         grad = self.hp.lr / (self.hp.num_samples * sigma_rewards) * step
         self.w1 += self.wa_1.update(grad)
         step = 0
-        for r, delta in rollouts:
-            step += r * delta[1]
+        for r1, r2, delta in rollouts:
+            step += (r1 - r2) * delta[1]
         grad = self.hp.lr / (self.hp.num_samples * sigma_rewards) * step
         self.b1 += self.ba_1.update(grad)
         step = 0
-        for r, delta in rollouts:
-            step += r * delta[2]
+        for r1, r2, delta in rollouts:
+            step += (r1 - r2) * delta[2]
         grad = self.hp.lr / (self.hp.num_samples * sigma_rewards) * step
         self.w2 += self.wa_2.update(grad)
         step = 0
-        for r, delta in rollouts:
-            step += r * delta[3]
+        for r1, r2, delta in rollouts:
+            step += (r1 - r2) * delta[3]
         grad = self.hp.lr / (self.hp.num_samples * sigma_rewards) * step
         self.b2 += self.ba_2.update(grad)
         step = 0
-        for r, delta in rollouts:
-            step += r * delta[4]
+        for r1, r2, delta in rollouts:
+            step += (r1 - r2) * delta[4]
         grad = self.hp.lr / (self.hp.num_samples * sigma_rewards) * step
         self.w3 += self.wa_3.update(grad)
         step = 0
-        for r, delta in rollouts:
-            step += r * delta[5]
+        for r1, r2, delta in rollouts:
+            step += (r1 - r2) * delta[5]
         grad = self.hp.lr / (self.hp.num_samples * sigma_rewards) * step
         self.b3 += self.ba_3.update(grad)
 
@@ -262,12 +264,16 @@ class ARS_TD3:
                 forward_reward_list.append(reward_forward)
                 backward_reward_list.append(reward_backward)
                 current_step += step1 + step2
-            rollouts = [((forward_reward_list[j] - backward_reward_list[j]),
-                         deltas[j]) for j in range(self.hp.num_samples)]
+            # rollouts = [((forward_reward_list[j] - backward_reward_list[j]),
+            #             deltas[j]) for j in range(self.hp.num_samples)]
+            scores = {k: max(r_pos, r_neg) for k, (r_pos, r_neg) in
+                      enumerate(zip(forward_reward_list, backward_reward_list))}
+            order = sorted(scores.keys(), key=lambda x: scores[x], reverse=True)[:self.hp.num_best_deltas]
+            rollouts = [(forward_reward_list[k], backward_reward_list[k], deltas[k]) for k in order]
             sigma_rewards = np.std(np.array(forward_reward_list + backward_reward_list))
             # policy.update(rollouts, sigma_rewards)
             policy.adam_update(rollouts, sigma_rewards)
-            test_reward,_ = policy.evaluate()
+            test_reward, _ = policy.evaluate()
             total_step.append(current_step)
             print('#######')
             print('Episode ', t)
@@ -275,4 +281,4 @@ class ARS_TD3:
             print('Total step is: ', current_step)
             print('Running time:', (datetime.datetime.now() - start_time).seconds)
             reward_memory.append(test_reward)
-        return reward_memory,total_step
+        return reward_memory, total_step

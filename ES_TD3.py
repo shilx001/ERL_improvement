@@ -43,42 +43,55 @@ class HP:
 
 
 class Policy:
-    def __init__(self, hp):
+    def __init__(self, hp, namescope='policy'):
         self.hp = hp
         # 针对每个层
-        self.w1 = np.random.randn(self.hp.input_size, self.hp.hidden_size) * self.hp.stddev
-        self.b1 = np.zeros([self.hp.hidden_size, ])
-        self.w2 = np.random.randn(self.hp.hidden_size, self.hp.hidden_size) * self.hp.stddev
-        self.b2 = np.zeros([self.hp.hidden_size, ])
-        self.w3 = np.random.randn(self.hp.hidden_size, self.hp.output_size) * self.hp.stddev
-        self.b3 = np.zeros([self.hp.output_size, ])
-        self.bc = None
+        self.input_state = tf.placeholder(dtype=tf.float32, shape=[None, self.hp.input_size])
+        self.action = self.build_network(self.input_state, namescope)
+        self.parameters = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, namescope)
+        self.w1 = tf.placeholder(dtype=tf.float32, shape=[self.hp.input_size, self.hp.hidden_size])
+        self.b1 = tf.placeholder(dtype=tf.float32, shape=[self.hp.hidden_size, ])
+        self.w2 = tf.placeholder(dtype=tf.float32, shape=[self.hp.hidden_size, self.hp.hidden_size])
+        self.b2 = tf.placeholder(dtype=tf.float32, shape=[self.hp.hidden_size, ])
+        self.w3 = tf.placeholder(dtype=tf.float32, shape=[self.hp.hidden_size, self.hp.output_size])
+        self.b3 = tf.placeholder(dtype=tf.float32, shape=[self.hp.output_size, ])
+        new_param_list = [self.w1, self.b1, self.w2, self.b2, self.w3, self.b3]
+        self.set_params_op = [self.parameters[i].assign(new_param_list[i]) for i in range(6)]
+        self.sess = tf.Session()
+        self.sess.run(tf.global_variables_initializer())
 
-    def get_params(self):
-        return [self.w1, self.b1, self.w2, self.b2, self.w3, self.b3]
+    def build_network(self, state, namescope, reuse=False):
+        with tf.variable_scope(namescope, reuse=reuse):
+            h1 = tf.layers.dense(state, units=self.hp.hidden_size, activation=tf.nn.relu,
+                                 kernel_initializer=tf.truncated_normal_initializer(stddev=self.hp.stddev))
+            h2 = tf.layers.dense(h1, units=self.hp.hidden_size, activation=tf.nn.relu,
+                                 kernel_initializer=tf.truncated_normal_initializer(stddev=self.hp.stddev))
+            output = tf.layers.dense(h2, units=self.hp.output_size, activation=tf.nn.tanh,
+                                     kernel_initializer=tf.truncated_normal_initializer(stddev=self.hp.stddev))
+        return output * self.hp.action_bound
 
-    def set_params(self, param_list):
-        self.w1 = param_list[0]
-        self.b1 = param_list[1]
-        self.w2 = param_list[2]
-        self.b2 = param_list[3]
-        self.w3 = param_list[4]
-        self.b3 = param_list[5]
+    def get_params(self):  # 需要重写一下
+        return self.sess.run(self.parameters)
 
-    def get_action(self, state, delta=None):
+    def set_params(self, param_list):  # 需要重写一下
+        w1 = param_list[0]
+        b1 = param_list[1]
+        w2 = param_list[2]
+        b2 = param_list[3]
+        w3 = param_list[4]
+        b3 = param_list[5]
+        self.sess.run(self.set_params_op, feed_dict={self.w1: w1,
+                                                     self.w2: w2,
+                                                     self.w3: w3,
+                                                     self.b1: b1,
+                                                     self.b2: b2,
+                                                     self.b3: b3})
+
+    def get_action(self, state, delta=None):  # 需要重写一下
         state = np.reshape(state, [1, self.hp.input_size])
-        if delta is None:
-            output1 = np.maximum(np.dot(state, self.w1) + self.b1, 0)
-            output2 = np.maximum(np.dot(output1, self.w2) + self.b2, 0)
-            action = np.tanh(np.reshape(np.dot(output2, self.w3) + self.b3, [self.hp.output_size, ]))
-        else:
-            output1 = np.maximum(np.dot(state, self.w1 + delta[0]) + self.b1 + delta[1], 0)
-            output2 = np.maximum(np.dot(output1, self.w2 + delta[2]) + self.b2 + delta[3], 0)
-            action = self.hp.action_bound * np.tanh(
-                np.reshape(np.dot(output2, self.w3 + delta[4]) + self.b3 + delta[5], [self.hp.output_size, ]))
-        return action * self.hp.action_bound
+        return self.sess.run(self.action, feed_dict={self.input_state:state})
 
-    def evaluate(self, delta=None):
+    def evaluate(self, delta=None, add_bonus=False):  # 不用
         # 根据当前state执在环境中执行一次，返回获得的reward和novelty
         # env为环境，为了防止多次初始化这里传入环境
         total_reward = 0
@@ -89,17 +102,22 @@ class Policy:
             # action = np.clip(self.get_action(self.hp.normalizer.normalize(obs), delta=delta), -1, 1)
             action = np.clip(self.get_action(obs, delta=delta), -1, 1)
             next_obs, reward, done, _ = self.hp.env.step(action)
+            state_action_pair = np.concatenate([obs.flatten(), action.flatten()], axis=0)
+            if add_bonus:
+                self.hp.simhash.inc_hash(np.reshape(state_action_pair, [1, -1]))
+                bonus = float(self.hp.simhash.predict_v2(np.reshape(state_action_pair, [1, -1])))
+                reward += bonus
             if i == self.hp.episode_length:
                 done = True
-            self.hp.td3_agent.store(obs, next_obs, action, reward, done)
+            self.hp.td3_agent.store(obs, next_obs, action.flatten(), reward, done)
             obs = next_obs
-            total_reward += reward
+            total_reward += self.hp.gamma ** i * reward
             num_steps += 1
             if done:
                 break
         return total_reward, num_steps
 
-    def mutate(self):
+    def mutate(self):  # 不用
         # 随机选择一个参数进行突变。按照ERL的来。
         mut_strength = 0.1
         num_mutation_frac = 0.1
@@ -136,7 +154,7 @@ class Population:
         # 创建n个population
         self.pop = collections.deque(maxlen=hp.num_samples)
         for i in range(hp.num_samples):
-            self.pop.append(Policy(hp))
+            self.pop.append(Policy(hp,'policy'+str(i)))
 
     def eval_fitness(self):
         total_steps = 0

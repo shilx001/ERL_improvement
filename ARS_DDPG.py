@@ -2,7 +2,7 @@ import numpy as np
 import gym
 import collections
 import datetime
-import td3_network
+import ddpg
 import utils
 
 
@@ -34,7 +34,7 @@ class HP:
         self.normalizer = utils.Normalizer(self.env.observation_space.shape[0])
         self.hidden_size = hidden_size
         self.stddev = std_dev
-        self.td3_agent = td3_network.TD3(self.input_size, self.output_size, 1, hidden_size=self.hidden_size)
+        self.td3_agent = ddpg.DDPG(self.input_size, self.output_size, 1, hidden_size=self.hidden_size,seed=seed)
         self.num_best_deltas=4
 
 
@@ -244,7 +244,7 @@ class Policy:
         self.b3 = params[5]
 
 
-class ARS_TD3:
+class ARS_DDPG:
     def __init__(self, hp):
         self.hp = hp
 
@@ -274,14 +274,14 @@ class ARS_TD3:
             sigma_rewards = np.std(np.array(forward_reward_list + backward_reward_list))
             # policy.update(rollouts, sigma_rewards)
             policy.adam_update(rollouts, sigma_rewards)
-            self.hp.td3_agent.train(self.hp.learning_steps)
             if t % self.hp.syn_step == 0 and t != 0:
-                # self.hp.td3_agent.syn_params(policy.get_params())
-
-                # policy.td3_update(self.hp.td3_agent.get_params())
-                policy.td3_soft_update(self.hp.td3_agent.get_params())
+                self.hp.td3_agent.syn_params(policy.get_params())
+                self.hp.td3_agent.train(self.hp.learning_steps)
+                policy.td3_update(self.hp.td3_agent.get_params())
+                #policy.td3_soft_update(self.hp.td3_agent.get_params())
                 # self.hp.td3_update(self.hp.td3_agent.get_params())
                 # pass
+            #policy.td3_soft_update(self.hp.td3_agent.get_params())
             test_reward, _ = policy.evaluate()
             total_step.append(current_step)
             print('#######')

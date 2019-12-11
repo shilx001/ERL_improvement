@@ -1,7 +1,7 @@
 from ES_TD3 import *
 import pickle
 
-env_name = 'Hopper-v2'
+env_name = 'Swimmer-v2'
 seed = [1, 2, 3, 4, 5]
 
 for i in seed:

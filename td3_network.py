@@ -53,9 +53,9 @@ class Actor(object):
     def create_actor_network(self, scope, reuse=False):
         with tf.variable_scope(scope, reuse=reuse):
             net = self.inp
-            net = slim.fully_connected(net, self.hidden_size, activation_fn=tf.nn.relu,
+            net = slim.fully_connected(net, self.hidden_size, activation_fn=None,
                                        weights_initializer=tf.truncated_normal_initializer(stddev=0.1))
-            net = slim.fully_connected(net, self.hidden_size, activation_fn=tf.nn.relu)
+            net = slim.fully_connected(net, self.hidden_size, activation_fn=None)
             net = slim.fully_connected(net, self.a_dim, activation_fn=tf.nn.tanh)
             scaled_out = tf.multiply(net, self.action_bound)
             return net, scaled_out
@@ -166,9 +166,9 @@ class TD3(object):
         self.sess = tf.Session()
         self.hidden_size = hidden_size
         self.actor = Actor(self.sess, state_dim, action_dim, action_bound,
-                           actor_lr, tau, int(batch_size), self.hidden_size, namescope=namescope)
+                           actor_lr, tau, int(batch_size), self.hidden_size, namescope=namescope + str(seed))
         self.critic = Critic(self.sess, state_dim, action_dim, critic_lr, tau,
-                             self.actor.scaled_out, self.hidden_size, namescope=namescope)
+                             self.actor.scaled_out, self.hidden_size, namescope=namescope + str(seed))
         actor_loss = -tf.reduce_mean(self.critic.total_out)
         self.actor_train_step = tf.train.AdamOptimizer(actor_lr).minimize(actor_loss,
                                                                           var_list=self.actor.network_params)
