@@ -7,13 +7,10 @@ import collections
 import datetime
 
 
-# from td3_network import *
-
-
 class HP:
-    def __init__(self, env_name='Hopper-v2', total_episodes=1000,
+    def __init__(self, env_name='Hopper-v2', total_episodes=1000, namescope='default',
                  episode_length=1000, total_steps=int(1e6), lr=0.01, action_bound=1, num_samples=10, noise=0.02,
-                 std_dev=0.03, batch_size=64, elite_percentage=0.2, mutate=0.2, crossover=0.2, hidden_size=64, seed=1):
+                 std_dev=0.03, batch_size=64, elite_percentage=0.2, mutate=0.9, crossover=0.2, hidden_size=64, seed=1):
         self.env = gym.make(env_name)
         np.random.seed(seed)
         self.env.seed(seed)
@@ -31,10 +28,11 @@ class HP:
         self.batch_size = batch_size
         self.elite_percentage = elite_percentage
         self.mutate = mutate
+        self.gamma = 1
         self.crossover = crossover
         self.hidden_size = hidden_size
         self.normalizer = utils.Normalizer(self.input_size)
-        self.replay_buffer = utils.ReplayBuffer()
+        self.namescope = namescope
 
 
 class Policy:
@@ -84,7 +82,7 @@ class Policy:
 
     def get_action(self, state, delta=None):  # 需要重写一下
         state = np.reshape(state, [1, self.hp.input_size])
-        return self.sess.run(self.action, feed_dict={self.input_state:state})
+        return self.sess.run(self.action, feed_dict={self.input_state: state})
 
     def evaluate(self, delta=None, add_bonus=False):  # 不用
         # 根据当前state执在环境中执行一次，返回获得的reward和novelty
@@ -98,13 +96,8 @@ class Policy:
             action = np.clip(self.get_action(obs, delta=delta), -1, 1)
             next_obs, reward, done, _ = self.hp.env.step(action)
             state_action_pair = np.concatenate([obs.flatten(), action.flatten()], axis=0)
-            if add_bonus:
-                self.hp.simhash.inc_hash(np.reshape(state_action_pair, [1, -1]))
-                bonus = float(self.hp.simhash.predict_v2(np.reshape(state_action_pair, [1, -1])))
-                reward += bonus
             if i == self.hp.episode_length:
                 done = True
-            self.hp.td3_agent.store(obs, next_obs, action.flatten(), reward, done)
             obs = next_obs
             total_reward += self.hp.gamma ** i * reward
             num_steps += 1
@@ -147,9 +140,10 @@ class Policy:
 class Population:
     def __init__(self, hp):
         # 创建n个population
+        self.hp = hp
         self.pop = collections.deque(maxlen=hp.num_samples)
         for i in range(hp.num_samples):
-            self.pop.append(Policy(hp, 'policy'+str(i)))
+            self.pop.append(Policy(hp, self.hp.namescope + 'policy' + str(i)))
 
     def eval_fitness(self):
         total_steps = 0
@@ -188,10 +182,9 @@ class Population:
 
     def mutate(self, index):
         # 从index中选
-        for i in index:
-            policy = self.pop[i]
-            policy.mutate()
-            self.pop[i] = policy
+        policy = self.pop[index]
+        policy.mutate()
+        self.pop[index] = policy
 
 
 class ERL:
@@ -213,7 +206,9 @@ class ERL:
             for index1 in range(len(sorted_index)):
                 for index2 in other_index:
                     population.cross_over(index1, index2)
-            population.mutate(range(len(other_index)))
+            for index in other_index:
+                if np.random.random() < self.hp.mutate:
+                    population.mutate(index)
             total_reward.append(fitness)
             print('#####')
             print('Episode ', i, ' reward:', fitness[sorted_index[-1]])  # 最好的结果

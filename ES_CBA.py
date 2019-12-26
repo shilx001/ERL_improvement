@@ -5,18 +5,13 @@ import utils
 import math
 import collections
 import datetime
-import td3_network
 import simhash
 
 
-# from td3_network import *
-
-
 class HP:
-    def __init__(self, env_name='Hopper-v2', total_episodes=1000, learning_steps=100, gamma=1, update_time=1,
-                 episode_length=1000, total_steps=int(1e6), lr=1e-3, action_bound=1, num_samples=10, noise=0.02, beta=1,
-                 std_dev=0.03, batch_size=100, elite_percentage=0.2, mutate=0.9, crossover=0.2, hidden_size=300,
-                 seed=1, add_bonus=True, namescope='default'):
+    def __init__(self, env_name='Hopper-v2', total_episodes=1000, namescope='default',
+                 episode_length=1000, total_steps=int(1e6), lr=0.01, action_bound=1, num_samples=10, noise=0.02,
+                 std_dev=0.03, batch_size=64, elite_percentage=0.2, mutate=0.9, crossover=0.2, hidden_size=64, seed=1):
         self.env = gym.make(env_name)
         np.random.seed(seed)
         self.env.seed(seed)
@@ -26,30 +21,19 @@ class HP:
         self.total_episodes = total_episodes
         self.episode_length = episode_length
         self.total_steps = total_steps
-        self.update_time = update_time
         self.lr = lr
         self.action_bound = action_bound
         self.num_samples = num_samples
         self.noise = noise
-        self.gamma = gamma
         self.stddev = std_dev
         self.batch_size = batch_size
         self.elite_percentage = elite_percentage
         self.mutate = mutate
+        self.gamma = 1
         self.crossover = crossover
         self.hidden_size = hidden_size
         self.normalizer = utils.Normalizer(self.input_size)
-        self.batch_size = batch_size
-        self.beta = beta
-        self.add_bonus = add_bonus
-        # config = tf.ConfigProto(device_count={'GPU': gpu})
-        self.learning_steps = learning_steps
         self.namescope = namescope
-        self.td3_agent = td3_network.TD3(self.input_size, self.output_size, 1, namescope=self.namescope,
-                                         hidden_size=self.hidden_size)
-        self.simhash = simhash.HashingBonusEvaluator(dim_key=32,
-                                                     obs_processed_flat_dim=self.input_size + self.output_size,
-                                                     beta=self.beta)
 
 
 class Policy:
@@ -101,9 +85,10 @@ class Policy:
         state = np.reshape(state, [1, self.hp.input_size])
         return self.sess.run(self.action, feed_dict={self.input_state: state})
 
-    def evaluate(self, delta=None, add_bonus=False):  # 不用
+    def evaluate(self, delta=None, add_bonus=False, hashtable=None):  # 不用
         # 根据当前state执在环境中执行一次，返回获得的reward和novelty
         # env为环境，为了防止多次初始化这里传入环境
+        replay = []
         total_reward = 0
         num_steps = 0
         obs = self.hp.env.reset()
@@ -113,19 +98,19 @@ class Policy:
             action = np.clip(self.get_action(obs, delta=delta), -1, 1)
             next_obs, reward, done, _ = self.hp.env.step(action)
             state_action_pair = np.concatenate([obs.flatten(), action.flatten()], axis=0)
+            replay.append(state_action_pair)
             if add_bonus:
-                self.hp.simhash.inc_hash(np.reshape(state_action_pair, [1, -1]))
-                bonus = float(self.hp.simhash.predict(np.reshape(state_action_pair, [1, -1])))
+                # self.hp.simhash.inc_hash(np.reshape(state_action_pair, [1, -1]))
+                bonus = float(hashtable.predict(np.reshape(state_action_pair, [1, -1])))
                 reward += bonus
             if i == self.hp.episode_length:
                 done = True
-            self.hp.td3_agent.store(obs, next_obs, action.flatten(), reward, done)
             obs = next_obs
             total_reward += self.hp.gamma ** i * reward
             num_steps += 1
             if done:
                 break
-        return total_reward, num_steps
+        return total_reward, num_steps, replay
 
     def mutate(self):  # 不用
         # 随机选择一个参数进行突变。按照ERL的来。
@@ -162,19 +147,21 @@ class Policy:
 class Population:
     def __init__(self, hp):
         # 创建n个population
+        self.hp = hp
         self.pop = collections.deque(maxlen=hp.num_samples)
-        self.hp=hp
         for i in range(hp.num_samples):
-            self.pop.append(Policy(hp, namescope=self.hp.namescope + 'policy' + str(i)))
+            self.pop.append(Policy(hp, self.hp.namescope + 'policy' + str(i)))
 
-    def eval_fitness(self, add_bonus=True):
+    def eval_fitness(self, add_bonus, hashtable):
         total_steps = 0
         fitness = []
+        all_replay = []
         for policy in self.pop:
-            reward, step = policy.evaluate(add_bonus=add_bonus)
+            reward, step, replay = policy.evaluate(add_bonus=add_bonus, hashtable=hashtable)
             total_steps += step
             fitness.append(reward)
-        return fitness, total_steps
+            all_replay += replay
+        return fitness, total_steps, all_replay
 
     def cross_over(self, index1, index2):
         # 对population进行修改,根据index进行杂交
@@ -208,13 +195,13 @@ class Population:
         policy.mutate()
         self.pop[index] = policy
 
-    def update_policy(self, policy, index):
-        self.pop[index] = policy
 
-
-class ERL_TD3:
+class ERL:
     def __init__(self, hp):
         self.hp = hp
+        self.hashtable = simhash.HashingBonusEvaluator(dim_key=32,
+                                                       obs_processed_flat_dim=self.hp.input_size + self.hp.output_size,
+                                                       beta=1)
 
     def train(self):
         population = Population(self.hp)
@@ -223,54 +210,24 @@ class ERL_TD3:
         total_reward = []
         for i in range(self.hp.total_episodes):
             start = datetime.datetime.now()
-            fitness, steps = population.eval_fitness()
+            add_bonus = True if i > 5 else False
+            fitness, steps, replay = population.eval_fitness(add_bonus=add_bonus, hashtable=self.hashtable)
+            for state_action in replay:
+                self.hashtable.inc_hash(np.reshape(state_action, [1, -1]))
             total_step += steps
+            total_step_list.append(total_step)
             sorted_index = np.argsort(fitness)
-
             other_index = sorted_index[:-int(len(sorted_index) * self.hp.elite_percentage)]
-            total_reward.append(fitness[sorted_index[-1]])
+            test_fitness, _, _ = population.eval_fitness(add_bonus=False, hashtable=None)
             for index1 in range(len(sorted_index)):
                 for index2 in other_index:
                     population.cross_over(index1, index2)
-            # mutate_index = np.random.choice(len(other_index), 2, replace=False)
-            # population.mutate(mutate_index)  # 这个地方有问题，并不是所有的突变，而是按照突变的选择两个突变。
             for index in other_index:
                 if np.random.random() < self.hp.mutate:
                     population.mutate(index)
-            env = self.hp.env
-            obs = env.reset()
-            td3_reward = 0
-            for step in range(self.hp.episode_length):  # 再按照TD3采集一次样本
-                action = self.hp.td3_agent.get_action(np.reshape(obs, (1, self.hp.input_size)))
-                action = (action + np.random.normal(0, 0.1, size=action.shape)).clip(
-                    env.action_space.low,
-                    env.action_space.high)
-                action = np.reshape(action, [-1])
-                next_obs, reward, done, _ = env.step(action)
-                td3_reward += self.hp.gamma ** step * reward
-                # self.hp.replay_buffer.add((self.hp.normalizer.normalize(obs), self.hp.normalizer.normalize(next_obs),
-                #                          action, reward, done))
-                if self.hp.add_bonus:
-                    state_action_pair = np.concatenate([obs.flatten(), action.flatten()], axis=0)
-                    self.hp.simhash.inc_hash(np.reshape(state_action_pair, [1, -1]))
-                    bonus = float(self.hp.simhash.predict(np.reshape(state_action_pair, [1, -1])))
-                    reward += bonus
-                self.hp.td3_agent.store(obs, next_obs, action, reward, done)
-                obs = next_obs
-                if done:
-                    break
-            if i > 10:
-                self.hp.td3_agent.train(self.hp.learning_steps)
-            if i % self.hp.update_time is 0 and i is not 1:
-                weakest = population.pop[sorted_index[0]]
-                weakest.set_params(self.hp.td3_agent.get_params())
-                population.update_policy(weakest, sorted_index[0])
-            total_step_list.append(total_step + step)
-            evaluate_reward, _ = population.pop[sorted_index[-1]].evaluate(add_bonus=False)
+            total_reward.append(fitness)
             print('#####')
-            print('Episode ', i, ' reward:', evaluate_reward)  # 最好的结果
-            print('Running steps:', total_step + step)
+            print('Episode ', i, ' reward:', np.max(test_fitness))  # 最好的结果
+            print('Running steps:', total_step)
             print('Running time:', (datetime.datetime.now() - start).seconds)
-            # print('TD3 reward is:', td3_reward)
-
         return total_reward, total_step_list

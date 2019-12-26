@@ -207,6 +207,7 @@ class TD3(object):
         self.replay_buffer.add((s, s2, action, r, done_bool))
 
     def get_params(self):
+        #return self.sess.run(self.actor.target_network_params)
         return self.sess.run(self.actor.network_params[:len(self.actor.network_params)])
 
     def get_action_target(self, s):

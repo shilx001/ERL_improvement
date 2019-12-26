@@ -59,7 +59,3 @@ class HashingBonusEvaluator(object):
     def predict(self, obs):  # 看看有几个值，如果sqrt(counts)小于1，则按1计算
         counts = self.query_hash(obs)
         return 1. / np.maximum(1., np.sqrt(counts))
-
-    def predict_v2(self, obs):
-        counts = self.query_hash(obs)
-        return self.beta / np.sqrt(counts)
