@@ -7,7 +7,7 @@ import utils
 
 
 # neural networks as policy, with adam optimizer
-# Periodically learning the agents with td3
+# 2019-12-29 关键改进：根据
 class HP:
     # hyper parameters
     def __init__(self, env_name='Hopper-v2', total_episodes=1000, action_bound=1,
@@ -34,6 +34,7 @@ class HP:
         self.normalizer = utils.Normalizer(self.env.observation_space.shape[0])
         self.hidden_size = hidden_size
         self.stddev = std_dev
+        self.td3_agent = td3_network.TD3(self.input_size, self.output_size, 1, hidden_size=self.hidden_size)
         self.num_best_deltas = 4
 
 
@@ -131,8 +132,7 @@ class Policy:
         if delta is None:
             output1 = np.maximum(np.dot(state, self.w1) + self.b1, 0)
             output2 = np.maximum(np.dot(output1, self.w2) + self.b2, 0)
-            action = self.hp.action_bound * np.tanh(
-                np.reshape(np.dot(output2, self.w3) + self.b3, [self.hp.output_size, ]))
+            action = np.tanh(np.reshape(np.dot(output2, self.w3) + self.b3, [self.hp.output_size, ]))
         else:
             output1 = np.maximum(np.dot(state, self.w1 + delta[0]) + self.b1 + delta[1], 0)
             output2 = np.maximum(np.dot(output1, self.w2 + delta[2]) + self.b2 + delta[3], 0)
@@ -148,9 +148,11 @@ class Policy:
         obs = self.hp.env.reset()
         for i in range(self.hp.episode_length):
             self.hp.normalizer.observe(obs)
-            action = self.get_action(self.hp.normalizer.normalize(obs), delta=delta)
+            action = np.clip(self.get_action(self.hp.normalizer.normalize(obs), delta=delta), -1, 1)
             # action = np.clip(self.get_action(obs, delta=delta), -1, 1)
             next_obs, reward, done, _ = self.hp.env.step(action)
+            self.hp.td3_agent.store(self.hp.normalizer.normalize(obs), self.hp.normalizer.normalize(next_obs),
+                                    action, reward, done)
             obs = next_obs
             total_reward += reward
             total_step += 1
@@ -161,33 +163,28 @@ class Policy:
     def update(self, rollouts, sigma_rewards):
         step = 0
         # 针对每个参数进行更新
-        for r1, r2, delta in rollouts:
-            step += (r1 - r2) * delta[0]
+        for r, delta in rollouts:
+            step += r * delta[0]
         self.w1 += self.hp.lr / (self.hp.num_samples * sigma_rewards) * step
         step = 0
-        # 针对每个参数进行更新
-        for r1, r2, delta in rollouts:
-            step += (r1 - r2) * delta[1]
+        for r, delta in rollouts:
+            step += r * delta[1]
         self.b1 += self.hp.lr / (self.hp.num_samples * sigma_rewards) * step
         step = 0
-        # 针对每个参数进行更新
-        for r1, r2, delta in rollouts:
-            step += (r1 - r2) * delta[2]
+        for r, delta in rollouts:
+            step += r * delta[2]
         self.w2 += self.hp.lr / (self.hp.num_samples * sigma_rewards) * step
         step = 0
-        # 针对每个参数进行更新
-        for r1, r2, delta in rollouts:
-            step += (r1 - r2) * delta[3]
+        for r, delta in rollouts:
+            step += r * delta[3]
         self.b2 += self.hp.lr / (self.hp.num_samples * sigma_rewards) * step
         step = 0
-        # 针对每个参数进行更新
-        for r1, r2, delta in rollouts:
-            step += (r1 - r2) * delta[4]
+        for r, delta in rollouts:
+            step += r * delta[4]
         self.w3 += self.hp.lr / (self.hp.num_samples * sigma_rewards) * step
         step = 0
-        # 针对每个参数进行更新
-        for r1, r2, delta in rollouts:
-            step += (r1 - r2) * delta[5]
+        for r, delta in rollouts:
+            step += r * delta[5]
         self.b3 += self.hp.lr / (self.hp.num_samples * sigma_rewards) * step
 
     def adam_update(self, rollouts, sigma_rewards):
@@ -231,14 +228,14 @@ class Policy:
                 np.random.randn(*self.b3.shape) * self.hp.noise]
 
     def td3_soft_update(self, params):
-        self.w1 = self.w1 * (1 - self.hp.weight) + self.hp.weight * params[0]
-        self.b1 = self.b1 * (1 - self.hp.weight) + self.hp.weight * params[1]
-        self.w2 = self.w2 * (1 - self.hp.weight) + self.hp.weight * params[2]
-        self.b2 = self.b2 * (1 - self.hp.weight) + self.hp.weight * params[3]
-        self.w3 = self.w3 * (1 - self.hp.weight) + self.hp.weight * params[4]
-        self.b3 = self.b3 * (1 - self.hp.weight) + self.hp.weight * params[5]
+        self.w1 = self.w1 + self.hp.weight * params[0]
+        self.b1 = self.b1 + self.hp.weight * params[1]
+        self.w2 = self.w2 + self.hp.weight * params[2]
+        self.b2 = self.b2 + self.hp.weight * params[3]
+        self.w3 = self.w3 + self.hp.weight * params[4]
+        self.b3 = self.b3 + self.hp.weight * params[5]
 
-    def td3_update(self, params):
+    def set_params(self, params):
         self.w1 = params[0]
         self.b1 = params[1]
         self.w2 = params[2]
@@ -270,20 +267,29 @@ class ARS_TD3:
                 forward_reward_list.append(reward_forward)
                 backward_reward_list.append(reward_backward)
                 current_step += step1 + step2
-            # rollouts = [((forward_reward_list[j] - backward_reward_list[j]),
-            #             deltas[j]) for j in range(self.hp.num_samples)]
             scores = {k: max(r_pos, r_neg) for k, (r_pos, r_neg) in
                       enumerate(zip(forward_reward_list, backward_reward_list))}
             order = sorted(scores.keys(), key=lambda x: scores[x], reverse=True)[:self.hp.num_best_deltas]
             rollouts = [(forward_reward_list[k], backward_reward_list[k], deltas[k]) for k in order]
             sigma_rewards = np.std(np.array(forward_reward_list + backward_reward_list))
             # policy.update(rollouts, sigma_rewards)
-            policy.adam_update(rollouts, sigma_rewards)
+            policy.adam_update(rollouts, sigma_rewards)  # 根据ARS更新策略
+            self.hp.td3_agent.train(int(self.hp.learning_steps))
             test_reward, _ = policy.evaluate()
+            td3_policy = Policy(self.hp)
+            td3_policy.set_params(self.hp.td3_agent.get_params())
+            td3_performance, _ = td3_policy.evaluate()
+            if t % self.hp.syn_step == 0 and t != 0:
+                # 评估TD3 agent与ARS agent的performance, 如果好则把ARS的agent更新
+                if td3_performance > test_reward:
+                    policy.set_params(self.hp.td3_agent.get_params())
             total_step.append(current_step)
             print('#######')
             print('Episode ', t)
-            print('Total reward is: ', test_reward)
+            if td3_performance>test_reward:
+                print('Total reward is: ', td3_performance)
+            else:
+                print('Total reward is: ', test_reward)
             print('Total step is: ', current_step)
             print('Running time:', (datetime.datetime.now() - start_time).seconds)
             reward_memory.append(test_reward)

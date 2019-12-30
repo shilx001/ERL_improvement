@@ -250,8 +250,10 @@ class ERL_TD3:
                     # if i > 20:
                     #    self.hp.td3_agent.train(self.hp.learning_steps)
                     break
-            if i > 20:
-                self.hp.td3_agent.train(self.hp.learning_steps)
+            if isinstance(self.hp.learning_steps, int):
+                self.hp.td3_agent.train(self.hp.learning_steps)  # td3学习
+            else:
+                self.hp.td3_agent.train(int(self.hp.td3_agent.get_replay_length() / self.hp.td3_agent.batch_size))
             if i % self.hp.update_time is 0 and i is not 1:
                 weakest = population.pop[sorted_index[0]]
                 weakest.set_params(self.hp.td3_agent.get_params())

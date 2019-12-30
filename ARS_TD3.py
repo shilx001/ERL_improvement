@@ -35,7 +35,7 @@ class HP:
         self.hidden_size = hidden_size
         self.stddev = std_dev
         self.td3_agent = td3_network.TD3(self.input_size, self.output_size, 1, hidden_size=self.hidden_size)
-        self.num_best_deltas=4
+        self.num_best_deltas = 4
 
 
 class Archive:
@@ -228,12 +228,12 @@ class Policy:
                 np.random.randn(*self.b3.shape) * self.hp.noise]
 
     def td3_soft_update(self, params):
-        self.w1 = self.w1 * (1 - self.hp.weight) + self.hp.weight * params[0]
-        self.b1 = self.b1 * (1 - self.hp.weight) + self.hp.weight * params[1]
-        self.w2 = self.w2 * (1 - self.hp.weight) + self.hp.weight * params[2]
-        self.b2 = self.b2 * (1 - self.hp.weight) + self.hp.weight * params[3]
-        self.w3 = self.w3 * (1 - self.hp.weight) + self.hp.weight * params[4]
-        self.b3 = self.b3 * (1 - self.hp.weight) + self.hp.weight * params[5]
+        self.w1 = self.w1 + self.hp.weight * params[0]
+        self.b1 = self.b1 + self.hp.weight * params[1]
+        self.w2 = self.w2 + self.hp.weight * params[2]
+        self.b2 = self.b2 + self.hp.weight * params[3]
+        self.w3 = self.w3 + self.hp.weight * params[4]
+        self.b3 = self.b3 + self.hp.weight * params[5]
 
     def td3_update(self, params):
         self.w1 = params[0]

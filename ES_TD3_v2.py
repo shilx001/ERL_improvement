@@ -12,7 +12,7 @@ import td3_network
 
 class HP:
     def __init__(self, env_name='Hopper-v2', total_episodes=1000, learning_steps=1000, update_time=1,
-                 episode_length=1000, total_steps=int(1e6), lr=1e-3, action_bound=1, num_samples=10, noise=0.02,best=2,
+                 episode_length=1000, total_steps=int(1e6), lr=1e-3, action_bound=1, num_samples=10, noise=0.02, best=2,
                  std_dev=0.03, batch_size=100, elite_percentage=0.2, mutate=0.9, crossover=0.2, hidden_size=64, seed=1,
                  namescope='default'):
         self.env = gym.make(env_name)
@@ -220,23 +220,24 @@ class ERL_TD3:
             fitness, steps = population.eval_fitness()
             total_step += steps
             sorted_index = np.argsort(fitness)
-
-            other_index = sorted_index[:-int(len(sorted_index) * self.hp.elite_percentage)]
+            other_index = sorted_index[:-int(len(sorted_index) * self.hp.elite_percentage)]  # 这个是最差的elite index
             total_reward.append(fitness[sorted_index[-1]])
-            for index1 in range(len(sorted_index)):
+            for index1 in other_index:
                 for index2 in other_index:
                     population.cross_over(index1, index2)
-            # mutate_index = np.random.choice(len(other_index), 2, replace=False)
-            # population.mutate(mutate_index)  # 这个地方有问题，并不是所有的突变，而是按照突变的选择两个突变。
             for index in other_index:
                 if np.random.random() < self.hp.mutate:
                     population.mutate(index)
-            learning_index = np.random.choice(self.hp.num_samples, self.hp.best)
+            learning_index = np.random.choice(self.hp.num_samples, self.hp.best)  # 随机选两个
+            # learning_index = sorted_index[:self.hp.best]  # 改为学习最差的
             for index in learning_index:
                 policy = population.pop[index]  # 拿到原有的agent
                 self.hp.td3_agent.syn_params(policy.get_params())  # 同步给td3agent
-                if i > 10:
-                    self.hp.td3_agent.train(self.hp.learning_steps)  # td3学习
+                if i > 1:
+                    if isinstance(self.hp.learning_steps, int):
+                        self.hp.td3_agent.train(self.hp.learning_steps)  # td3学习
+                    else:
+                        self.hp.td3_agent.train(int(self.hp.td3_agent.get_replay_length()/self.hp.td3_agent.batch_size))
                 policy.set_params(self.hp.td3_agent.get_params())  # 把td3的学习后的parameter更新回来
                 population.update_policy(policy, index)
 

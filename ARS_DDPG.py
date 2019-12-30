@@ -12,7 +12,7 @@ class HP:
     # hyper parameters
     def __init__(self, env_name='Hopper-v2', total_episodes=1000, action_bound=1,
                  episode_length=1000, learning_rate=0.02, weight=0.01, learning_steps=100,
-                 num_samples=8, noise=0.02, bc_index=[], std_dev=0.03, syn_step=10,
+                 num_samples=8, noise=0.02, bc_index=[], std_dev=0.03, syn_step=1,
                  meta_population_size=5, seed=1, hidden_size=300):
         self.env = gym.make(env_name)
         np.random.seed(seed)
@@ -34,8 +34,8 @@ class HP:
         self.normalizer = utils.Normalizer(self.env.observation_space.shape[0])
         self.hidden_size = hidden_size
         self.stddev = std_dev
-        self.td3_agent = ddpg.DDPG(self.input_size, self.output_size, 1, hidden_size=self.hidden_size,seed=seed)
-        self.num_best_deltas=4
+        self.td3_agent = ddpg.DDPG(self.input_size, self.output_size, 1, hidden_size=self.hidden_size, seed=seed)
+        self.num_best_deltas = 4
 
 
 class Archive:
@@ -228,12 +228,12 @@ class Policy:
                 np.random.randn(*self.b3.shape) * self.hp.noise]
 
     def td3_soft_update(self, params):
-        self.w1 = self.w1 * (1 - self.hp.weight) + self.hp.weight * params[0]
-        self.b1 = self.b1 * (1 - self.hp.weight) + self.hp.weight * params[1]
-        self.w2 = self.w2 * (1 - self.hp.weight) + self.hp.weight * params[2]
-        self.b2 = self.b2 * (1 - self.hp.weight) + self.hp.weight * params[3]
-        self.w3 = self.w3 * (1 - self.hp.weight) + self.hp.weight * params[4]
-        self.b3 = self.b3 * (1 - self.hp.weight) + self.hp.weight * params[5]
+        self.w1 = self.w1 + self.hp.weight * params[0]
+        self.b1 = self.b1 + self.hp.weight * params[1]
+        self.w2 = self.w2 + self.hp.weight * params[2]
+        self.b2 = self.b2 + self.hp.weight * params[3]
+        self.w3 = self.w3 + self.hp.weight * params[4]
+        self.b3 = self.b3 + self.hp.weight * params[5]
 
     def td3_update(self, params):
         self.w1 = params[0]
@@ -278,10 +278,10 @@ class ARS_DDPG:
                 self.hp.td3_agent.syn_params(policy.get_params())
                 self.hp.td3_agent.train(self.hp.learning_steps)
                 policy.td3_update(self.hp.td3_agent.get_params())
-                #policy.td3_soft_update(self.hp.td3_agent.get_params())
+                # policy.td3_soft_update(self.hp.td3_agent.get_params())
                 # self.hp.td3_update(self.hp.td3_agent.get_params())
                 # pass
-            #policy.td3_soft_update(self.hp.td3_agent.get_params())
+            # policy.td3_soft_update(self.hp.td3_agent.get_params())
             test_reward, _ = policy.evaluate()
             total_step.append(current_step)
             print('#######')
